@@ -21,14 +21,18 @@ class Linear(nn.Module):
     """
     def __init__(self, in_features: int, out_features: int) -> None:
         super(Linear, self).__init__()
-        raise NotImplementedError
+
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = torch.nn.Parameter(torch.randn(out_features, in_features))
+        self.bias = torch.nn.Parameter(torch.randn(out_features))
     
     def forward(self, input):
         """
             :param input: [bsz, in_features]
             :return result [bsz, out_features]
         """
-        raise NotImplementedError
+        return torch.matmul(input, self.weight.T) + self.bias
 
 
 class MLP(torch.nn.Module):
@@ -48,9 +52,10 @@ class MLP(torch.nn.Module):
         for layer in self.hidden_layers:
             self._initialize_linear_layer(layer)
     
-    def _build_layers(self, input_size: int, 
-                        hidden_sizes: List[int], 
-                        num_classes: int) -> Tuple[nn.ModuleList, nn.Module]:
+    def _build_layers(self,
+                      input_size: int,
+                      hidden_sizes: List[int],
+                      num_classes: int) -> Tuple[nn.ModuleList, nn.Module]:
         """
         Build the layers for MLP. Be ware of handlling corner cases.
         :param input_size: An int
@@ -60,15 +65,29 @@ class MLP(torch.nn.Module):
             hidden_layers: nn.ModuleList. Within the list, each item has type nn.Module
             output_layer: nn.Module
         """
-        raise NotImplementedError
+
+        sizes = [input_size] + hidden_sizes
+        hidden_layers = []
+        for i in range(1, len(sizes)):
+            hidden_layers.append(Linear(sizes[i-1], sizes[i]))
+        output_layer = Linear(hidden_sizes[-1], num_classes)
+        return nn.ModuleList(hidden_layers), output_layer
     
     def activation_fn(self, activation, inputs: torch.Tensor) -> torch.Tensor:
         """ process the inputs through different non-linearity function according to activation name """
-        raise NotImplementedError
+        if activation == 'relu':
+            return torch.relu(inputs)
+        elif activation == 'tanh':
+            return torch.tanh(inputs)
+        elif activation == 'sigmoid':
+            return torch.sigmoid(inputs)
+        else:
+            raise ValueError(f"Invalid activation function: {activation}")
         
     def _initialize_linear_layer(self, module: nn.Linear) -> None:
         """ For bias set to zeros. For weights set to glorot normal """
-        raise NotImplementedError
+        torch.nn.init.zeros_(module.bias)
+        torch.nn.init.xavier_normal_(module.weight)
         
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """ Forward images and compute logits.
@@ -79,4 +98,10 @@ class MLP(torch.nn.Module):
         :param images: [batch, channels, width, height]
         :return logits: [batch, num_classes]
         """
-        raise NotImplementedError
+        flat_images = images.flatten(start_dim=1)
+        out = flat_images
+        for layer in self.hidden_layers:
+            out = layer(out)
+            out = self.activation_fn(self.activation, out)
+        out = self.output_layer(out)
+        return out

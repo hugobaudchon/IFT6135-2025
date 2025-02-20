@@ -73,6 +73,9 @@ def evaluate(epoch, model, dataloader, args, mode="val"):
 
         
 if __name__ == "__main__":
+    # test torch gpu
+    print(torch.cuda.is_available())
+
     parser = get_config_parser()
     args = parser.parse_args()
 

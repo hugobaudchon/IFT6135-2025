@@ -61,7 +61,13 @@ def cross_entropy_loss(logits: torch.Tensor, labels: torch.Tensor):
     :param labels: [batch_size]
     :return loss 
     """
-    raise NotImplementedError
+    batch_size = logits.shape[0]
+    one_hot = torch.zeros_like(logits)
+    one_hot[torch.arange(batch_size), labels] = 1
+    softmax = torch.exp(logits) / torch.sum(torch.exp(logits), dim=1, keepdim=True)
+    loss = -torch.sum(one_hot * torch.log(softmax)) / batch_size
+    return loss
+
 
 def compute_accuracy(logits: torch.Tensor, labels: torch.Tensor):
     """ Compute the accuracy of the batch """

@@ -8,8 +8,7 @@ import os
 class PatchEmbed(nn.Module):
     """ 2D Image to Patch Embedding
     """
-    def __init__(self, img_size, patch_size, in_chans=3, 
-                 embed_dim=768):
+    def __init__(self, img_size, patch_size, in_chans=3, embed_dim=768):
         super(PatchEmbed, self).__init__()
         self.img_size = img_size
         self.patch_size = patch_size
@@ -17,7 +16,7 @@ class PatchEmbed(nn.Module):
         self.num_patches = self.grid_size * self.grid_size
         
         # Uncomment this line and replace ? with correct values
-        #self.proj = nn.Conv2d(?, ?, kernel_size=?, stride=?)
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=self.patch_size, stride=self.patch_size)
 
     def forward(self, x):
         """
@@ -76,8 +75,12 @@ class MixerBlock(nn.Module):
         self.mlp_channels = Mlp(dim, channels_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x):
-        raise NotImplementedError
-    
+        out = self.norm1(x)
+        out = self.mlp_tokens(out.permute(0, 2, 1)).permute(0, 2, 1) + x
+        out2 = self.norm2(out)
+        out2 = self.mlp_channels(out2) + out
+        return out2
+
 
 class MLPMixer(nn.Module):
     def __init__(self, num_classes, img_size, patch_size, embed_dim, num_blocks, 
@@ -112,12 +115,13 @@ class MLPMixer(nn.Module):
         """ MLPMixer forward
         :param images: [batch, 3, img_size, img_size]
         """
-        # step1: Go through the patch embedding
-        # step 2 Go through the mixer blocks
-        # step 3 go through layer norm
-        # step 4 Global averaging spatially
-        # Classification
-        raise NotImplementedError
+
+        out = self.patchemb(images)
+        out = self.blocks(out)
+        out = self.norm(out)
+        out = out.mean(dim=1)
+        out = self.head(out)
+        return out
     
     def visualize(self, logdir):
         """ Visualize the token mixer layer 
