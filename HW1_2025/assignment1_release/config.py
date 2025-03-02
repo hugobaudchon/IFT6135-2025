@@ -55,6 +55,12 @@ def get_config_parser():
         default=5e-4,
         help="weight decay (default: %(default)s).",
     )
+    optimization.add_argument(
+        "--patience",
+        type=float,
+        default=10,
+        help="for early stopping (default: %(default)s).",
+    )
 
     exp = parser.add_argument_group("Experiment config")
     exp.add_argument(

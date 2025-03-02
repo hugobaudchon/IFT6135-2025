@@ -71,18 +71,23 @@ def evaluate(epoch, model, dataloader, args, mode="val"):
         )
     return epoch_loss, epoch_accuracy, time.time() - start_time
 
-        
+
 if __name__ == "__main__":
+    import sys  # Needed for sys.exit
+
     # test torch gpu
     print(torch.cuda.is_available())
 
     parser = get_config_parser()
+    # Add the new evaluate flag
+    parser.add_argument("--evaluate", action="store_true",
+                        help="Skip training; load best checkpoint from logdir and evaluate")
     args = parser.parse_args()
 
     # Check for the device
     if (args.device == "cuda") and not torch.cuda.is_available():
         warnings.warn(
-            "CUDA is not available, make that your environment is "
+            "CUDA is not available, make sure your environment is "
             "running on GPU (e.g. in the Notebook Settings in Google Colab). "
             'Forcing device="cpu".'
         )
@@ -97,17 +102,21 @@ if __name__ == "__main__":
     # Seed the experiment, for repeatability
     seed_experiment(args.seed)
 
-    test_transform = transforms.Compose([transforms.ToTensor(),
-                                     transforms.Normalize([0.49139968, 0.48215841, 0.44653091], [0.24703223, 0.24348513, 0.26158784])
-                                     ])
-    # For training, we add some augmentation. Networks are too powerful and would overfit.
-    train_transform = transforms.Compose([transforms.RandomHorizontalFlip(),
-                                          transforms.RandomResizedCrop((32,32),scale=(0.8,1.0),ratio=(0.9,1.1)),
-                                          transforms.ToTensor(),
-                                          transforms.Normalize([0.49139968, 0.48215841, 0.44653091], [0.24703223, 0.24348513, 0.26158784])
-                                        ])
-    # Loading the training dataset. We need to split it into a training and validation part
-    # We need to do a little trick because the validation set should not use the augmentation.
+    test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize([0.49139968, 0.48215841, 0.44653091],
+                             [0.24703223, 0.24348513, 0.26158784])
+    ])
+    # For training, we add some augmentation.
+    train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomResizedCrop((32, 32), scale=(0.8, 1.0), ratio=(0.9, 1.1)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.49139968, 0.48215841, 0.44653091],
+                             [0.24703223, 0.24348513, 0.26158784])
+    ])
+
+    # Loading the training dataset and splitting into train and validation parts.
     train_dataset = CIFAR10(root='./data', train=True, transform=train_transform, download=True)
     val_dataset = CIFAR10(root='./data', train=True, transform=test_transform, download=True)
     train_set, _ = torch.utils.data.random_split(train_dataset, [45000, 5000])
@@ -115,8 +124,8 @@ if __name__ == "__main__":
 
     # Loading the test set
     test_set = CIFAR10(root='./data', train=False, transform=test_transform, download=True)
-    
-    # Load model
+
+    # Build model
     print(f'Build model {args.model.upper()}...')
     if args.model_config is not None:
         print(f'Loading model config from {args.model_config}')
@@ -131,7 +140,7 @@ if __name__ == "__main__":
     model_cls = {'mlp': MLP, 'resnet18': ResNet18, 'mlpmixer': MLPMixer}[args.model]
     model = model_cls(**model_config)
     model.to(args.device)
-    
+
     # Optimizer
     if args.optimizer == "adamw":
         optimizer = optim.AdamW(
@@ -150,38 +159,87 @@ if __name__ == "__main__":
             momentum=args.momentum,
             weight_decay=args.weight_decay,
         )
-    
+
     print(
         f"Initialized {args.model.upper()} model with {sum(p.numel() for p in model.parameters())} "
         f"total parameters, of which {sum(p.numel() for p in model.parameters() if p.requires_grad)} are learnable."
     )
 
+    # Create dataloaders (these will be used for both training and evaluation)
+    train_dataloader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, drop_last=True, pin_memory=True,
+                                  num_workers=4)
+    valid_dataloader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=4)
+    test_dataloader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=4)
+
+    # Check if evaluation mode is activated. If so, skip training.
+    if args.evaluate:
+        print("Evaluation mode enabled: Loading best checkpoint from logdir and evaluating.")
+        if args.logdir is None:
+            raise ValueError("Evaluation mode requires --logdir to be specified")
+        checkpoint_file = os.path.join(args.logdir, 'model.pth')
+        if not os.path.exists(checkpoint_file):
+            raise FileNotFoundError(f"Checkpoint file {checkpoint_file} does not exist.")
+        model.load_state_dict(torch.load(checkpoint_file, map_location=args.device))
+
+        # Evaluate on validation set
+        valid_loss, valid_acc, valid_time = evaluate(0, model, valid_dataloader, args)
+        print(f"Validation Accuracy: {valid_acc:.3f}")
+
+        # Evaluate on test set
+        test_loss, test_acc, test_time = evaluate(0, model, test_dataloader, args, mode="test")
+        print(f"Test Accuracy: {test_acc:.3f}")
+
+        # Visualization (if applicable)
+        if args.visualize and args.model in ['resnet18', 'mlpmixer']:
+            model.visualize(args.logdir)
+
+        sys.exit(0)  # Exit after evaluation
+
+    # Otherwise, run the training loop.
     train_losses, valid_losses = [], []
     train_accs, valid_accs = [], []
     train_times, valid_times = [], []
-    
-    # We define a set of data loaders that we can use for various purposes later.
-    train_dataloader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, drop_last=True, pin_memory=True, num_workers=4)
-    valid_dataloader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=4)
-    test_dataloader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, drop_last=False, num_workers=4)
+
+    epochs_since_improvement = 0
+    best_accuracy = 0
+    best_accuracy_params = None
+
     for epoch in range(args.epochs):
         tqdm.write(f"====== Epoch {epoch} ======>")
-        loss, acc, wall_time = train(epoch, model, train_dataloader, optimizer,args)
+        if epochs_since_improvement > args.patience:
+            print(f"Early stopping at epoch {epoch}")
+            break
+        loss, acc, wall_time = train(epoch, model, train_dataloader, optimizer, args)
         train_losses.append(loss)
         train_accs.append(acc)
         train_times.append(wall_time)
 
-        loss, acc, wall_time = evaluate(epoch, model, valid_dataloader,args)
+        loss, acc, wall_time = evaluate(epoch, model, valid_dataloader, args)
         valid_losses.append(loss)
         valid_accs.append(acc)
         valid_times.append(wall_time)
 
-    test_loss, test_acc, test_time = evaluate(
-        epoch, model, test_dataloader, args, mode="test"
-    )
+        if acc > best_accuracy:
+            best_accuracy = acc
+            best_accuracy_params = model.state_dict()
+            epochs_since_improvement = 0
+        else:
+            epochs_since_improvement += 1
+
+    # Load best model
+    model.load_state_dict(best_accuracy_params)
+
+    test_loss, test_acc, test_time = evaluate(epoch, model, test_dataloader, args, mode="test")
+    print(valid_accs, best_accuracy)
     print(f"===== Best validation Accuracy: {max(valid_accs):.3f} =====>")
 
-    # Save log if logdir provided
+    # Save model
+    if args.logdir is not None:
+        print(f'Saving model to {args.logdir}...')
+        os.makedirs(args.logdir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(args.logdir, 'model.pth'))
+
+    # Save training logs
     if args.logdir is not None:
         print(f'Writing training logs to {args.logdir}...')
         os.makedirs(args.logdir, exist_ok=True)
@@ -197,7 +255,8 @@ if __name__ == "__main__":
                 },
                 indent=4,
             ))
-    
-        # Visualize
+
+        # Visualization (if applicable)
         if args.visualize and args.model in ['resnet18', 'mlpmixer']:
             model.visualize(args.logdir)
+

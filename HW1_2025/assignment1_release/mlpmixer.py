@@ -126,5 +126,27 @@ class MLPMixer(nn.Module):
     def visualize(self, logdir):
         """ Visualize the token mixer layer 
         in the desired directory """
-        raise NotImplementedError
+
+        first_mixer_block = self.blocks[0]
+        token_mixing_layer = first_mixer_block.mlp_tokens.fc1  # First layer of token-mixing MLP
+
+        weights = token_mixing_layer.weight.detach().cpu().numpy()
+
+        # normalize
+        weights = (weights - weights.min()) / (weights.max() - weights.min())
+
+        # Plot the weights
+        plt.figure(figsize=(10, 5))
+        plt.imshow(weights, cmap='viridis', aspect='auto')
+        plt.colorbar(label='Weight Magnitude')
+        plt.xlabel('Input Token Index')
+        plt.ylabel('Output Token Index')
+        plt.title('Visualization of Token-Mixing MLP Weights (First Layer)')
+
+        # Save the figure
+        fig_path = os.path.join(logdir, 'token_mixing_weights.png')
+        plt.savefig(fig_path)
+        plt.close()
+
+        print(f'Visualization saved to {fig_path}')
  

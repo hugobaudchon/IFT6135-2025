@@ -4,9 +4,13 @@ Reference:
 [1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 '''
+import os
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from matplotlib import pyplot as plt
 
 
 class BasicBlock(nn.Module):
@@ -75,5 +79,99 @@ class ResNet18(nn.Module):
         return out
 
     def visualize(self, logdir):
-        """ Visualize the kernel in the desired directory """
-        raise NotImplementedError
+        import os, matplotlib.pyplot as plt, numpy as np
+        weights = self.conv1.weight.detach().cpu().numpy()
+
+        fig, axes = plt.subplots(8, 8, figsize=(8, 8))
+        for i, ax in enumerate(axes.flat):
+            if i < weights.shape[0]:
+                kernel = weights[i].transpose(1, 2, 0)
+                min_val = kernel.min()
+                max_val = kernel.max()
+                diff = max_val - min_val
+                if diff > 0:
+                    kernel = (kernel - min_val) / diff
+                ax.imshow(kernel)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            row, col = i // 8, i % 8
+            if row == 7:
+                ax.text(0.5, -0.15, str(col + 1), transform=ax.transAxes, ha='center', va='top', fontsize=8)
+            if col == 0:
+                ax.text(-0.15, 0.5, str(row + 1), transform=ax.transAxes, ha='right', va='center', fontsize=8)
+        plt.tight_layout()
+        save_path = os.path.join(logdir, "kernels.png")
+        plt.savefig(save_path)
+        plt.close(fig)
+
+        fig_gray, axes_gray = plt.subplots(8, 8, figsize=(8, 8))
+        for i, ax in enumerate(axes_gray.flat):
+            if i < weights.shape[0]:
+                kernel = weights[i].transpose(1, 2, 0)
+                kernel_gray = np.dot(kernel, [0.2989, 0.5870, 0.1140])
+                min_val = kernel_gray.min()
+                max_val = kernel_gray.max()
+                diff = max_val - min_val
+                if diff > 0:
+                    kernel_gray = (kernel_gray - min_val) / diff
+                ax.imshow(kernel_gray, cmap='gray')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            row, col = i // 8, i % 8
+            if row == 7:
+                ax.text(0.5, -0.15, str(col + 1), transform=ax.transAxes, ha='center', va='top', fontsize=8)
+            if col == 0:
+                ax.text(-0.15, 0.5, str(row + 1), transform=ax.transAxes, ha='right', va='center', fontsize=8)
+        plt.tight_layout()
+        gray_path = os.path.join(logdir, "kernels_gray.png")
+        plt.savefig(gray_path)
+        plt.close(fig_gray)
+
+        fig_avg, axes_avg = plt.subplots(8, 8, figsize=(8, 8))
+        for i, ax in enumerate(axes_avg.flat):
+            if i < weights.shape[0]:
+                kernel = weights[i].transpose(1, 2, 0)
+                kernel_avg = kernel.mean(axis=-1)
+                min_val = kernel_avg.min()
+                max_val = kernel_avg.max()
+                diff = max_val - min_val
+                if diff > 0:
+                    kernel_avg = (kernel_avg - min_val) / diff
+                ax.imshow(kernel_avg, cmap='gray')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            row, col = i // 8, i % 8
+            if row == 7:
+                ax.text(0.5, -0.15, str(col + 1), transform=ax.transAxes, ha='center', va='top', fontsize=8)
+            if col == 0:
+                ax.text(-0.15, 0.5, str(row + 1), transform=ax.transAxes, ha='right', va='center', fontsize=8)
+        plt.tight_layout()
+        avg_path = os.path.join(logdir, "kernels_avg.png")
+        plt.savefig(avg_path)
+        plt.close(fig_avg)
+
+        fig_chan, axes_chan = plt.subplots(8, 3, figsize=(6, 16))
+        for i in range(8):
+            for j in range(3):
+                ax = axes_chan[i, j]
+                channel_img = weights[i][j]
+                min_val = channel_img.min()
+                max_val = channel_img.max()
+                diff = max_val - min_val
+                if diff > 0:
+                    channel_img = (channel_img - min_val) / diff
+                ax.imshow(channel_img, cmap='gray')
+                ax.set_xticks([])
+                ax.set_yticks([])
+                if i == 0:
+                    if j == 0:
+                        ax.set_title("Red", fontsize=16)
+                    elif j == 1:
+                        ax.set_title("Green", fontsize=16)
+                    elif j == 2:
+                        ax.set_title("Blue", fontsize=16)
+            axes_chan[i, 0].set_ylabel(f"(1,{i + 1})", fontsize=16)
+        plt.tight_layout()
+        chan_path = os.path.join(logdir, "kernels_channels.png")
+        plt.savefig(chan_path)
+        plt.close(fig_chan)
