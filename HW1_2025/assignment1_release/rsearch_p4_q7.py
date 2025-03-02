@@ -28,7 +28,7 @@ if __name__ == "__main__":
             f.write(json.dumps(mlp_config, indent=4))
 
         run_logdir = f"{output_dir}/run_{i}"
-        command = f"python main.py --model mlpmixer --model_config {str(config_path)} --patience {patience} --epochs {max_epochs} --logdir {run_logdir} > {output_dir}/log.txt 2>&1"
+        command = f"python main.py --model mlpmixer --model_config {str(config_path)} --epochs {max_epochs} --logdir {run_logdir} > {output_dir}/log.txt 2>&1"
         os.system(command)
 
         # load results.json in logdir

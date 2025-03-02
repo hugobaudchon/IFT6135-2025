@@ -57,8 +57,8 @@ def get_config_parser():
     )
     optimization.add_argument(
         "--patience",
-        type=float,
-        default=10,
+        type=int,
+        default=-1,
         help="for early stopping (default: %(default)s).",
     )
 

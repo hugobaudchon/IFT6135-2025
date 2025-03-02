@@ -1,3 +1,5 @@
+import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
 from torch import nn
 import torch
 import math
@@ -122,30 +124,101 @@ class MLPMixer(nn.Module):
         out = out.mean(dim=1)
         out = self.head(out)
         return out
-    
+
     def visualize(self, logdir):
-        """ Visualize the token mixer layer 
-        in the desired directory """
+        """
+        Visualize paired kernels of the token-mixing MLP weights from the first Mixer block.
 
-        first_mixer_block = self.blocks[0]
-        token_mixing_layer = first_mixer_block.mlp_tokens.fc1  # First layer of token-mixing MLP
+        For the first block, the fc1 weights (shape: [num_units, num_weights]) are reshaped into
+        sqrt(num_weights) x sqrt(num_weights) kernels (e.g., 64 weights -> 8x8 kernel), normalized,
+        sorted by a frequency metric (sum of absolute values as a proxy), and paired (first with last,
+        second with second-last, etc.) to highlight opposing phases. A montage is then created and saved.
+        """
 
+        token_mixing_layer = self.blocks[0].mlp_tokens.fc1
         weights = token_mixing_layer.weight.detach().cpu().numpy()
 
-        # normalize
-        weights = (weights - weights.min()) / (weights.max() - weights.min())
+        kernels = []
+        for w in weights:
+            num_weights = w.size
+            side = int(np.sqrt(num_weights))
+            kernel = w.reshape(side, side)
+            # normalize
+            kernel = kernel - kernel.mean()
+            max_abs = np.abs(kernel).max()
+            if max_abs > 0:
+                kernel = kernel / max_abs
+            kernels.append(kernel)
 
-        # Plot the weights
-        plt.figure(figsize=(10, 5))
-        plt.imshow(weights, cmap='viridis', aspect='auto')
-        plt.colorbar(label='Weight Magnitude')
-        plt.xlabel('Input Token Index')
-        plt.ylabel('Output Token Index')
-        plt.title('Visualization of Token-Mixing MLP Weights (First Layer)')
+        def compute_freq_metric(kernel):
+            # compute 2D Fourier transform and shift the zero frequency component to the center
+            f = np.fft.fft2(kernel)
+            f = np.fft.fftshift(f)
+            # radial grid
+            rows, cols = kernel.shape
+            y = np.arange(rows) - rows // 2
+            x = np.arange(cols) - cols // 2
+            X, Y = np.meshgrid(x, y)
+            R = np.sqrt(X ** 2 + Y ** 2)
+            # final metric: sum of (radial distance * magnitude of Fourier coefficient)
+            return np.sum(R * np.abs(f))
 
-        # Save the figure
-        fig_path = os.path.join(logdir, 'token_mixing_weights.png')
-        plt.savefig(fig_path)
+        # compute frequency metric for each kernel
+        freq_metrics = [compute_freq_metric(kernel) for kernel in kernels]
+
+        # sort kernels per frequency
+        sorted_indices = np.argsort(freq_metrics)
+        sorted_kernels = [kernels[i] for i in sorted_indices]
+
+        # plotting
+        num_kernels = len(sorted_kernels)
+        cols = int(np.ceil(np.sqrt(num_kernels)))
+        rows = int(np.ceil(num_kernels / cols))
+
+        kernel_size = sorted_kernels[0].shape[0]
+        vertical_gap = 1
+        horizontal_gap = 1
+
+        figure_height = rows * kernel_size + (rows - 1) * vertical_gap
+        figure_width = cols * kernel_size + (cols - 1) * horizontal_gap
+
+        figure = np.zeros((figure_height, figure_width))
+
+        for idx, kernel in enumerate(sorted_kernels):
+            r = idx // cols
+            c = idx % cols
+            y = r * (kernel_size + vertical_gap)
+            x = c * (kernel_size + horizontal_gap)
+            figure[y:y + kernel_size, x:x + kernel_size] = kernel
+
+        # padding
+        padded_figure = np.zeros((figure_height + 2, figure_width + 2)) * (-1)
+        padded_figure[1:-1, 1:-1] = figure
+
+        # custom colors
+        custom_cmap = LinearSegmentedColormap.from_list(
+            'custom_bwr_dark',
+            [(0.0, (0, 0, 0.65)), (0.5, (1, 1, 1)), (1.0, (0.65, 0, 0))]
+        )
+
+        fig_path = os.path.join(logdir, "token_mixing_block1_per_freq.png")
+        plt.figure(figsize=(cols * 2, rows * 2))
+        plt.imshow(padded_figure, cmap=custom_cmap, interpolation='nearest')
+
+        ax = plt.gca()
+        for r in range(rows):
+            center_y = 1 + r * (kernel_size + vertical_gap) + kernel_size / 2
+            ax.text(-kernel_size / 2, center_y, str(r + 1), va='center', ha='center',
+                    fontsize=24, color='black')
+        for c in range(cols):
+            center_x = 1 + c * (kernel_size + horizontal_gap) + kernel_size / 2
+            ax.text(center_x, -kernel_size / 2, str(c + 1), va='center', ha='center',
+                    fontsize=24, color='black')
+
+        plt.xlim(-kernel_size, figure_width + 2)
+        plt.ylim(figure_height + 2, -kernel_size)
+        plt.axis('off')
+        plt.savefig(fig_path, bbox_inches='tight')
         plt.close()
 
         print(f'Visualization saved to {fig_path}')

@@ -16,10 +16,17 @@ if __name__ == "__main__":
         # root_dir / 'p4_q3_lr0p0001',
         # root_dir / 'p4_q3_lr0p00001'
 
-        root_dir / 'p4_q4_patchsize2',
-        root_dir / 'p4_q4_patchsize4',
-        root_dir / 'p4_q4_patchsize8',
-        root_dir / 'p4_q4_patchsize16',
+        # root_dir / 'p4_q4_patchsize2',
+        # root_dir / 'p4_q4_patchsize4',
+        # root_dir / 'p4_q4_patchsize8',
+        # root_dir / 'p4_q4_patchsize16'
+
+        root_dir / 'p4_q7/run_0',
+        root_dir / 'p4_q7/run_1',
+        root_dir / 'p4_q7/run_2',
+        root_dir / 'p4_q7/run_3',
+        root_dir / 'p4_q7/run_4',
+        root_dir / 'p4_q7/run_5'
     ]
 
     legend_names = [
@@ -33,12 +40,19 @@ if __name__ == "__main__":
         # 'lr=0.0001',
         # 'lr=0.00001'
 
-        'patchsize=2',
-        'patchsize=4',
-        'patchsize=8',
-        'patchsize=16'
+        # 'patchsize=2',
+        # 'patchsize=4',
+        # 'patchsize=8',
+        # 'patchsize=16'
+
+        'embed_dim=64',
+        'embed_dim=128',
+        'embed_dim=256',
+        'embed_dim=384',
+        'embed_dim=512',
+        'embed_dim=1024'
     ]
 
-    output_dir = 'figs_p4_q4'
+    output_dir = 'figs_p4_q7'
     Path(output_dir).mkdir(exist_ok=True, parents=True)
     generate_plots(list_of_dirs, legend_names, output_dir)
