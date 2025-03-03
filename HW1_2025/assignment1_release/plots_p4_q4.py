@@ -13,7 +13,7 @@ def generate_patch_size_plot():
     fig, ax = plt.subplots()
 
     # Plot the data
-    ax.plot(patch_sizes, times, marker='o', linestyle='-', color='blue', label='Inference Time')
+    ax.plot(patch_sizes, times, marker='o', linestyle='--', color='blue', label='Inference Time')
 
     # Label the axes and add a title
     ax.set_xlabel("Patch Size")

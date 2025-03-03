@@ -79,64 +79,29 @@ class ResNet18(nn.Module):
         return out
 
     def visualize(self, logdir):
-        import os, matplotlib.pyplot as plt, numpy as np
         weights = self.conv1.weight.detach().cpu().numpy()
 
-        fig, axes = plt.subplots(8, 8, figsize=(8, 8))
-        for i, ax in enumerate(axes.flat):
-            if i < weights.shape[0]:
-                kernel = weights[i].transpose(1, 2, 0)
-                min_val = kernel.min()
-                max_val = kernel.max()
-                diff = max_val - min_val
-                if diff > 0:
-                    kernel = (kernel - min_val) / diff
-                ax.imshow(kernel)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            row, col = i // 8, i % 8
-            if row == 7:
-                ax.text(0.5, -0.15, str(col + 1), transform=ax.transAxes, ha='center', va='top', fontsize=8)
-            if col == 0:
-                ax.text(-0.15, 0.5, str(row + 1), transform=ax.transAxes, ha='right', va='center', fontsize=8)
-        plt.tight_layout()
-        save_path = os.path.join(logdir, "kernels.png")
-        plt.savefig(save_path)
-        plt.close(fig)
-
-        fig_gray, axes_gray = plt.subplots(8, 8, figsize=(8, 8))
-        for i, ax in enumerate(axes_gray.flat):
-            if i < weights.shape[0]:
-                kernel = weights[i].transpose(1, 2, 0)
-                kernel_gray = np.dot(kernel, [0.2989, 0.5870, 0.1140])
-                min_val = kernel_gray.min()
-                max_val = kernel_gray.max()
-                diff = max_val - min_val
-                if diff > 0:
-                    kernel_gray = (kernel_gray - min_val) / diff
-                ax.imshow(kernel_gray, cmap='gray')
-            ax.set_xticks([])
-            ax.set_yticks([])
-            row, col = i // 8, i % 8
-            if row == 7:
-                ax.text(0.5, -0.15, str(col + 1), transform=ax.transAxes, ha='center', va='top', fontsize=8)
-            if col == 0:
-                ax.text(-0.15, 0.5, str(row + 1), transform=ax.transAxes, ha='right', va='center', fontsize=8)
-        plt.tight_layout()
-        gray_path = os.path.join(logdir, "kernels_gray.png")
-        plt.savefig(gray_path)
-        plt.close(fig_gray)
-
+        # avg kernel plots
         fig_avg, axes_avg = plt.subplots(8, 8, figsize=(8, 8))
+
+        kernel_avgs = []
+        num_kernels = min(weights.shape[0], 64)  # 64 for an 8x8 grid
+        for i in range(num_kernels):
+            kernel = weights[i].transpose(1, 2, 0)
+            kernel_avg = kernel.mean(axis=-1)
+            kernel_avgs.append(kernel_avg)
+        kernel_avgs = np.array(kernel_avgs)
+
+        global_min = kernel_avgs.min()
+        global_max = kernel_avgs.max()
+        diff = global_max - global_min
+
         for i, ax in enumerate(axes_avg.flat):
             if i < weights.shape[0]:
                 kernel = weights[i].transpose(1, 2, 0)
                 kernel_avg = kernel.mean(axis=-1)
-                min_val = kernel_avg.min()
-                max_val = kernel_avg.max()
-                diff = max_val - min_val
                 if diff > 0:
-                    kernel_avg = (kernel_avg - min_val) / diff
+                    kernel_avg = (kernel_avg - global_min) / diff
                 ax.imshow(kernel_avg, cmap='gray')
             ax.set_xticks([])
             ax.set_yticks([])
@@ -145,21 +110,31 @@ class ResNet18(nn.Module):
                 ax.text(0.5, -0.15, str(col + 1), transform=ax.transAxes, ha='center', va='top', fontsize=8)
             if col == 0:
                 ax.text(-0.15, 0.5, str(row + 1), transform=ax.transAxes, ha='right', va='center', fontsize=8)
+
         plt.tight_layout()
         avg_path = os.path.join(logdir, "kernels_avg.png")
         plt.savefig(avg_path)
         plt.close(fig_avg)
+
+        # r, g, b kernel plots
+        all_channels = []
+        for i in range(8):
+            for j in range(3):
+                channel_img = weights[i][j]
+                all_channels.append(channel_img)
+        all_channels = np.array(all_channels)
+
+        global_min = all_channels.min()
+        global_max = all_channels.max()
+        diff = global_max - global_min
 
         fig_chan, axes_chan = plt.subplots(8, 3, figsize=(6, 16))
         for i in range(8):
             for j in range(3):
                 ax = axes_chan[i, j]
                 channel_img = weights[i][j]
-                min_val = channel_img.min()
-                max_val = channel_img.max()
-                diff = max_val - min_val
                 if diff > 0:
-                    channel_img = (channel_img - min_val) / diff
+                    channel_img = (channel_img - global_min) / diff
                 ax.imshow(channel_img, cmap='gray')
                 ax.set_xticks([])
                 ax.set_yticks([])
@@ -171,7 +146,10 @@ class ResNet18(nn.Module):
                     elif j == 2:
                         ax.set_title("Blue", fontsize=16)
             axes_chan[i, 0].set_ylabel(f"(1,{i + 1})", fontsize=16)
+
         plt.tight_layout()
         chan_path = os.path.join(logdir, "kernels_channels.png")
         plt.savefig(chan_path)
         plt.close(fig_chan)
+
+

@@ -21,11 +21,13 @@ from torch.utils.data import DataLoader
 import time
 import os
 
+
 def train(epoch, model, dataloader, optimizer, args):
     model.train()
     total_iters = 0
-    epoch_accuracy=0
-    epoch_loss=0
+    epoch_accuracy = 0
+    epoch_loss = 0
+    grad_tracking = []
     start_time = time.time()
     for idx, batch in enumerate(dataloader):
         batch = to_device(batch, args.device)
@@ -36,6 +38,48 @@ def train(epoch, model, dataloader, optimizer, args):
         acc = compute_accuracy(logits, labels)
 
         loss.backward()
+
+        # gradient tracking
+        if args.track_gradients:
+            grad_dict = {}
+            if isinstance(model, MLP):
+                for idx_layer, layer in enumerate(model.hidden_layers):
+                    total_norm = 0.0
+                    for param in layer.parameters():
+                        if param.grad is not None:
+                            total_norm += param.grad.data.norm(2).item() ** 2
+                    grad_dict[f"hidden_layer_{idx_layer}"] = total_norm ** 0.5
+                total_norm = 0.0
+                for param in model.output_layer.parameters():
+                    if param.grad is not None:
+                        total_norm += param.grad.data.norm(2).item() ** 2
+                grad_dict["output_layer"] = total_norm ** 0.5
+            elif isinstance(model, ResNet18):
+                for name in ["conv1", "bn1", "layer1", "layer2", "layer3", "layer4", "linear"]:
+                    module = getattr(model, name, None)
+                    if module is not None:
+                        total_norm = 0.0
+                        for param in module.parameters():
+                            if param.grad is not None:
+                                total_norm += param.grad.data.norm(2).item() ** 2
+                        grad_dict[name] = total_norm ** 0.5
+            elif isinstance(model, MLPMixer):
+                for mod_name in ['patchemb', 'norm', 'head']:
+                    module = getattr(model, mod_name, None)
+                    if module is not None:
+                        total_norm = 0.0
+                        for param in module.parameters():
+                            if param.grad is not None:
+                                total_norm += param.grad.data.norm(2).item() ** 2
+                        grad_dict[mod_name] = total_norm ** 0.5
+                for idx, block in enumerate(model.blocks):
+                    total_norm = 0.0
+                    for param in block.parameters():
+                        if param.grad is not None:
+                            total_norm += param.grad.data.norm(2).item() ** 2
+                    grad_dict[f"block_{idx}"] = total_norm ** 0.5
+            grad_tracking.append(grad_dict)
+
         optimizer.step()
         epoch_accuracy += acc.item() / len(dataloader)
         epoch_loss += loss.item() / len(dataloader)
@@ -44,7 +88,7 @@ def train(epoch, model, dataloader, optimizer, args):
         if idx % args.print_every == 0:
             tqdm.write(f"[TRAIN] Epoch: {epoch}, Iter: {idx}, Loss: {loss.item():.5f}")
     tqdm.write(f"== [TRAIN] Epoch: {epoch}, Accuracy: {epoch_accuracy:.3f} ==>")
-    return epoch_loss, epoch_accuracy, time.time() - start_time
+    return epoch_loss, epoch_accuracy, time.time() - start_time, grad_tracking
 
 
 def evaluate(epoch, model, dataloader, args, mode="val"):
@@ -186,6 +230,7 @@ if __name__ == "__main__":
     train_losses, valid_losses = [], []
     train_accs, valid_accs = [], []
     train_times, valid_times = [], []
+    train_gradients = []
 
     epochs_since_improvement = 0
     best_accuracy = 0
@@ -193,14 +238,15 @@ if __name__ == "__main__":
 
     for epoch in range(args.epochs):
         tqdm.write(f"====== Epoch {epoch} ======>")
-        print(args.patience)
         if (args.patience and args.patience > 0) and epochs_since_improvement > args.patience:
             print(f"Early stopping at epoch {epoch}")
             break
-        loss, acc, wall_time = train(epoch, model, train_dataloader, optimizer, args)
+        loss, acc, wall_time, epoch_grad = train(epoch, model, train_dataloader, optimizer, args)
         train_losses.append(loss)
         train_accs.append(acc)
         train_times.append(wall_time)
+        if args.track_gradients:
+            train_gradients.append(epoch_grad)
 
         loss, acc, wall_time = evaluate(epoch, model, valid_dataloader, args)
         valid_losses.append(loss)
@@ -234,17 +280,19 @@ if __name__ == "__main__":
         print(f'Writing training logs to {args.logdir}...')
         os.makedirs(args.logdir, exist_ok=True)
         with open(os.path.join(args.logdir, 'results.json'), 'w') as f:
-            f.write(json.dumps(
-                {
-                    "train_losses": train_losses,
-                    "valid_losses": valid_losses,
-                    "train_accs": train_accs,
-                    "valid_accs": valid_accs,
-                    "test_loss": test_loss,
-                    "test_acc": test_acc
-                },
-                indent=4,
-            ))
+            results = {
+                "train_losses": train_losses,
+                "valid_losses": valid_losses,
+                "train_accs": train_accs,
+                "valid_accs": valid_accs,
+                "test_loss": test_loss,
+                "test_acc": test_acc
+            }
+            if args.track_gradients:
+                results["train_gradients"] = train_gradients
+
+            with open(os.path.join(args.logdir, 'results.json'), 'w') as f:
+                f.write(json.dumps(results, indent=4))
 
         # Visualize
         if args.visualize and args.model in ['resnet18', 'mlpmixer']:

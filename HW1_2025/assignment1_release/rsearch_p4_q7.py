@@ -7,7 +7,14 @@ if __name__ == "__main__":
     output_dir = 'output/p4_q7'
     Path(output_dir).mkdir(exist_ok=True, parents=True)
 
-    embed_dim_list = [64, 128, 256, 384, 512, 1024]
+    embed_dim_list = [
+        64,
+        128,
+        256,
+        384,
+        512,
+        1024
+    ]
     max_epochs = 100
     patience = 10
 

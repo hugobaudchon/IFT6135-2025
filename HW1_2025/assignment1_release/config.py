@@ -95,4 +95,9 @@ def get_config_parser():
         action='store_true',
         help='A flag to visualize the filters or MLP layer at the end'
     )
+    misc.add_argument(
+        "--track_gradients",
+        action='store_true',
+        help='A flag to save gradient norms of major layers throughout training'
+    )
     return parser

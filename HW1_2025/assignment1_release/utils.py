@@ -27,6 +27,50 @@ def generate_plots(list_of_dirs, legend_names, save_path):
         ax.set_xlabel('epochs')
         ax.set_ylabel(yaxis.replace('_', ' '))
         fig.savefig(os.path.join(save_path, f'{yaxis}.png'))
+
+
+def generate_gradient_layer_plot(log_dir, save_path, max_epoch, title):
+    json_path = os.path.join(log_dir, 'results.json')
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"No results.json found in {log_dir}")
+
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+
+    train_gradients = data.get("train_gradients", [])
+    if not train_gradients:
+        raise ValueError("No gradient data found in results.json")
+
+    # layer_avg will store: { layer_name: [avg_grad_epoch1, avg_grad_epoch2, ...] }
+    layer_avg = {}
+
+    for epoch_grad in train_gradients:
+        if not epoch_grad:
+            continue
+        epoch_layer_avg = {}
+        for layer in epoch_grad[0].keys():
+            batch_vals = [batch.get(layer, 0.0) for batch in epoch_grad]
+            epoch_layer_avg[layer] = sum(batch_vals) / len(batch_vals)
+        for layer, avg in epoch_layer_avg.items():
+            layer_avg.setdefault(layer, []).append(avg)
+
+    fig, ax = plt.subplots()
+
+    epochs_range = range(1, max_epoch + 1)
+    for layer, values in layer_avg.items():
+        if len(values) < max_epoch:
+            values_extended = values + [np.nan] * (max_epoch - len(values))
+        else:
+            values_extended = values[:max_epoch]
+        ax.plot(epochs_range, values_extended, label=layer)
+
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel("Average Gradient Norm")
+    ax.set_title(title)
+    ax.legend()
+    ax.set_xlim(1, max_epoch)
+    fig.savefig(os.path.join(save_path, "gradient_evolution.png"))
+    plt.close(fig)
         
 
 def seed_experiment(seed):

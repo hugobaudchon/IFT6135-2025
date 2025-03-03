@@ -2,5 +2,5 @@
     "input_size": 3072,
     "hidden_sizes": [1024, 512, 64, 64],
     "num_classes": 10,
-    "activation": "sigmoid"
+    "activation": "tanh"
 }
